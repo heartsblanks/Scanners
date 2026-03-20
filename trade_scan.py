@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import math
 import requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -28,6 +29,12 @@ SECONDARY_INSTRUMENTS = {
     "NIO": {"symbol": "NIO", "type": "stock", "priority": 3, "market": "NASDAQ"},
     "Palantir": {"symbol": "PLTR", "type": "stock", "priority": 3, "market": "NASDAQ"},
     "Emerging Markets ETF": {"symbol": "EEM", "type": "etf", "priority": 4, "market": "EM"},
+}
+
+THIRD_INSTRUMENTS = {
+    "Plug Power": {"symbol": "PLUG", "type": "stock", "priority": 8, "market": "NASDAQ"},
+    "Bitfarms": {"symbol": "BITF", "type": "stock", "priority": 6, "market": "NASDAQ"},
+    "Snap": {"symbol": "SNAP", "type": "stock", "priority": 7, "market": "NYSE"},
 }
 
 
@@ -146,8 +153,41 @@ def market_time_check():
     )
 
 
-def fetch_intraday(symbol: str, interval: str = "1min", outputsize: int = 240) -> list[dict]:
+def get_required_outputsize(interval: str = "1min") -> int:
+    """
+    Make sure we always fetch enough bars to include 09:30–09:45 NY,
+    even late in the session.
+    """
+    now_ny = get_ny_now()
+    (
+        is_trading_day,
+        _is_early_close,
+        market_open_ny,
+        _market_close_ny,
+        _day_msg,
+    ) = holiday_and_early_close_status(now_ny)
+
+    if not is_trading_day:
+        return 600
+
+    minutes_since_open = max(0, int((now_ny - market_open_ny).total_seconds() / 60))
+
+    if interval == "1min":
+        # full session so far + buffer
+        return max(240, minutes_since_open + 90)
+
+    if interval == "5min":
+        bars = math.ceil(minutes_since_open / 5)
+        return max(100, bars + 20)
+
+    return 600
+
+
+def fetch_intraday(symbol: str, interval: str = "1min", outputsize: int | None = None) -> list[dict]:
     require_api_key()
+
+    if outputsize is None:
+        outputsize = get_required_outputsize(interval)
 
     params = {
         "symbol": symbol,
@@ -189,14 +229,15 @@ def fetch_intraday(symbol: str, interval: str = "1min", outputsize: int = 240) -
 
 
 def build_opening_range(candles: list[dict]):
-    if len(candles) < 30:
+    if len(candles) < 15:
         return None
 
-    ny_tz = ZoneInfo("America/New_York")
     opening_candles = []
 
     for c in candles:
-        dt = datetime.fromisoformat(c["datetime"]).replace(tzinfo=ny_tz)
+        # Twelve Data intraday datetimes for US stocks are effectively in exchange-local time.
+        dt = datetime.fromisoformat(c["datetime"])
+
         if dt.hour == 9 and 30 <= dt.minute < 45:
             opening_candles.append(c)
 
@@ -676,15 +717,16 @@ def run_scan(account_size: float, mode: str):
         selected_instruments = PRIMARY_INSTRUMENTS
     elif mode == "secondary":
         selected_instruments = SECONDARY_INSTRUMENTS
+    elif mode == "third":
+        selected_instruments = THIRD_INSTRUMENTS
     else:
-        raise ValueError("Mode must be 'primary' or 'secondary'")
+        raise ValueError("Mode must be 'primary', 'secondary', or 'third'")
 
     benchmark_instruments = get_benchmark_instruments()
 
     benchmark_cache, benchmark_ok, benchmark_fail = fetch_instruments(benchmark_instruments)
     benchmark_directions, benchmark_direction_fail = get_benchmark_directions_from_cache(benchmark_cache)
 
-    # For primary mode, do NOT refetch SPY/QQQ if already fetched as benchmarks
     if mode == "primary":
         non_benchmark_instruments = {
             name: info
@@ -696,7 +738,6 @@ def run_scan(account_size: float, mode: str):
 
     instrument_cache, instrument_ok, instrument_fail = fetch_instruments(non_benchmark_instruments)
 
-    # Reuse benchmark candles in cache
     combined_cache = {}
     combined_cache.update(benchmark_cache)
     combined_cache.update(instrument_cache)
@@ -822,13 +863,13 @@ def main():
     args = [a for a in args if a != "--debug"]
 
     if len(args) < 2:
-        print("Usage: python3 trade_scan.py <AccountSize> <primary|secondary> [--debug]")
-        print("   or: python3 trade_scan.py --test <AccountSize> <primary|secondary> [--debug]")
+        print("Usage: python3 trade_scan.py <AccountSize> <primary|secondary|third> [--debug]")
+        print("   or: python3 trade_scan.py --test <AccountSize> <primary|secondary|third> [--debug]")
         return
 
     if args[0] == "--test":
         if len(args) < 3:
-            print("Usage: python3 trade_scan.py --test <AccountSize> <primary|secondary> [--debug]")
+            print("Usage: python3 trade_scan.py --test <AccountSize> <primary|secondary|third> [--debug]")
             return
         account_size = float(args[1])
         mode = args[2].lower()
