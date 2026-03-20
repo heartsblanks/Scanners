@@ -6,9 +6,14 @@ on:
       account_size:
         description: "Account size"
         required: true
+        type: string
       mode:
         description: "primary or secondary"
         required: true
+        type: choice
+        options:
+          - primary
+          - secondary
 
 jobs:
   run-scan:
