@@ -374,6 +374,17 @@ def evaluate_symbol(name: str, info: dict, candles: list[dict], account_size: fl
     direction = "BUY" if price > or_high else "SELL"
     metrics["direction"] = direction
 
+    # Long-only mode: ignore bearish setups
+    checks["long_only_filter"] = direction == "BUY"
+    if not checks["long_only_filter"]:
+        return {
+            "name": name,
+            "decision": "REJECTED",
+            "final_reason": "SELL setup ignored in long-only mode.",
+            "checks": checks,
+            "metrics": metrics,
+        }
+
     if direction == "BUY":
         checks["vwap_alignment"] = price > vwap
     else:
@@ -594,7 +605,7 @@ def format_trade(eval_result: dict) -> str:
     return f"""{eval_result['name']} ({m['symbol']})
 Confidence: {m['final_confidence']} (Base: {m['base_confidence']} + Priority: {m['priority_boost']} - TimePenalty: {m['time_penalty']})
 
-Direction: {m['direction']}
+Action: LONG
 Entry: {fmt(m['entry'])}
 Stop: {fmt(m['stop'])}
 Target: {fmt(m['target'])}
@@ -639,6 +650,8 @@ def format_debug_result(eval_result: dict) -> str:
 
     if "direction" in m:
         lines.append(f"- Direction: {m['direction']}")
+    if "direction" in m and m["direction"] == "BUY":
+        lines.append("- Actionability: LONG candidate")
     if "benchmark_key" in m:
         lines.append(f"- Benchmark Used: {m['benchmark_key']}")
         lines.append(f"- Benchmark Direction: {m.get('benchmark_direction', 'N/A')}")
