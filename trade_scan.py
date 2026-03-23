@@ -13,30 +13,32 @@ API_KEY = os.getenv("TWELVEDATA_API_KEY")
 BASE_URL = "https://api.twelvedata.com/time_series"
 
 PRIMARY_INSTRUMENTS = {
-    "NVIDIA": {"symbol": "NVDA", "type": "stock", "priority": 12, "market": "NASDAQ"},
-    "Tesla": {"symbol": "TSLA", "type": "stock", "priority": 12, "market": "NASDAQ"},
-    "AMD": {"symbol": "AMD", "type": "stock", "priority": 11, "market": "NASDAQ"},
-    "Meta": {"symbol": "META", "type": "stock", "priority": 10, "market": "NASDAQ"},
-    "Amazon": {"symbol": "AMZN", "type": "stock", "priority": 10, "market": "NASDAQ"},
-    "Microsoft": {"symbol": "MSFT", "type": "stock", "priority": 7, "market": "NASDAQ"},
-    "S&P 500 ETF": {"symbol": "SPY", "type": "etf", "priority": 6, "market": "SP500"},
-    "Nasdaq-100 ETF": {"symbol": "QQQ", "type": "etf", "priority": 6, "market": "NASDAQ"},
+    "Rivian": {"symbol": "RIVN", "type": "stock", "priority": 10, "market": "NASDAQ"},
+    "NIO": {"symbol": "NIO", "type": "stock", "priority": 9, "market": "NASDAQ"},
+    "SoFi": {"symbol": "SOFI", "type": "stock", "priority": 8, "market": "NASDAQ"},
+    "Snap": {"symbol": "SNAP", "type": "stock", "priority": 8, "market": "NYSE"},
 }
 
 SECONDARY_INSTRUMENTS = {
-    "Apple": {"symbol": "AAPL", "type": "stock", "priority": 6, "market": "NASDAQ"},
-    "Rivian": {"symbol": "RIVN", "type": "stock", "priority": 3, "market": "NASDAQ"},
-    "NIO": {"symbol": "NIO", "type": "stock", "priority": 3, "market": "NASDAQ"},
-    "Palantir": {"symbol": "PLTR", "type": "stock", "priority": 3, "market": "NASDAQ"},
-    "Emerging Markets ETF": {"symbol": "EEM", "type": "etf", "priority": 4, "market": "EM"},
+    "Lucid": {"symbol": "LCID", "type": "stock", "priority": 7, "market": "NASDAQ"},
+    "Archer Aviation": {"symbol": "ACHR", "type": "stock", "priority": 7, "market": "NYSE"},
+    "Opendoor": {"symbol": "OPEN", "type": "stock", "priority": 6, "market": "NASDAQ"},
+    "QuantumScape": {"symbol": "QS", "type": "stock", "priority": 6, "market": "NYSE"},
 }
 
 THIRD_INSTRUMENTS = {
-    "Plug Power": {"symbol": "PLUG", "type": "stock", "priority": 8, "market": "NASDAQ"},
-    "Bitfarms": {"symbol": "BITF", "type": "stock", "priority": 6, "market": "NASDAQ"},
-    "Snap": {"symbol": "SNAP", "type": "stock", "priority": 7, "market": "NYSE"},
+    "Plug Power": {"symbol": "PLUG", "type": "stock", "priority": 7, "market": "NASDAQ"},
+    "Bitfarms": {"symbol": "BITF", "type": "stock", "priority": 7, "market": "NASDAQ"},
+    "Joby Aviation": {"symbol": "JOBY", "type": "stock", "priority": 6, "market": "NYSE"},
+    "Grab": {"symbol": "GRAB", "type": "stock", "priority": 6, "market": "NASDAQ"},
 }
 
+FOURTH_INSTRUMENTS = {
+    "Clover Health": {"symbol": "CLOV", "type": "stock", "priority": 6, "market": "NASDAQ"},
+    "Telefonica Brasil": {"symbol": "VIV", "type": "stock", "priority": 5, "market": "NYSE"},
+    "TAL Education": {"symbol": "TAL", "type": "stock", "priority": 6, "market": "NYSE"},
+    "Hims & Hers": {"symbol": "HIMS", "type": "stock", "priority": 6, "market": "NYSE"},
+}
 
 def fmt(x: float) -> str:
     return f"{x:.2f}"
@@ -606,6 +608,7 @@ def format_trade(eval_result: dict) -> str:
 Confidence: {m['final_confidence']} (Base: {m['base_confidence']} + Priority: {m['priority_boost']} - TimePenalty: {m['time_penalty']})
 
 Action: LONG
+Current Price: {fmt(m['price'])}
 Entry: {fmt(m['entry'])}
 Stop: {fmt(m['stop'])}
 Target: {fmt(m['target'])}
@@ -687,8 +690,8 @@ def format_debug_result(eval_result: dict) -> str:
 
 def get_benchmark_instruments():
     return {
-        "S&P 500 ETF": PRIMARY_INSTRUMENTS["S&P 500 ETF"],
-        "Nasdaq-100 ETF": PRIMARY_INSTRUMENTS["Nasdaq-100 ETF"],
+        "S&P 500 ETF": {"symbol": "SPY", "type": "etf", "priority": 6, "market": "SP500"},
+        "Nasdaq-100 ETF": {"symbol": "QQQ", "type": "etf", "priority": 6, "market": "NASDAQ"},
     }
 
 
@@ -732,22 +735,17 @@ def run_scan(account_size: float, mode: str):
         selected_instruments = SECONDARY_INSTRUMENTS
     elif mode == "third":
         selected_instruments = THIRD_INSTRUMENTS
+    elif mode == "fourth":
+        selected_instruments = FOURTH_INSTRUMENTS
     else:
-        raise ValueError("Mode must be 'primary', 'secondary', or 'third'")
+        raise ValueError("Mode must be 'primary', 'secondary', 'third', or 'fourth'")
 
     benchmark_instruments = get_benchmark_instruments()
 
     benchmark_cache, benchmark_ok, benchmark_fail = fetch_instruments(benchmark_instruments)
     benchmark_directions, benchmark_direction_fail = get_benchmark_directions_from_cache(benchmark_cache)
 
-    if mode == "primary":
-        non_benchmark_instruments = {
-            name: info
-            for name, info in selected_instruments.items()
-            if name not in benchmark_instruments
-        }
-    else:
-        non_benchmark_instruments = selected_instruments
+    non_benchmark_instruments = selected_instruments
 
     instrument_cache, instrument_ok, instrument_fail = fetch_instruments(non_benchmark_instruments)
 
@@ -876,13 +874,13 @@ def main():
     args = [a for a in args if a != "--debug"]
 
     if len(args) < 2:
-        print("Usage: python3 trade_scan.py <AccountSize> <primary|secondary|third> [--debug]")
-        print("   or: python3 trade_scan.py --test <AccountSize> <primary|secondary|third> [--debug]")
+        print("Usage: python3 trade_scan.py <AccountSize> <primary|secondary|third|fourth> [--debug]")
+        print("   or: python3 trade_scan.py --test <AccountSize> <primary|secondary|third|fourth> [--debug]")
         return
 
     if args[0] == "--test":
         if len(args) < 3:
-            print("Usage: python3 trade_scan.py --test <AccountSize> <primary|secondary|third> [--debug]")
+            print("Usage: python3 trade_scan.py --test <AccountSize> <primary|secondary|third|fourth> [--debug]")
             return
         account_size = float(args[1])
         mode = args[2].lower()
